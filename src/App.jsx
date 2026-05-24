@@ -657,34 +657,47 @@ export default function App() {
   const [topFive, setTopFive] = useState(EMPTY_PRIORITIES);
   const [modal, setModal] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
 
-  // ── Load data from Supabase on mount ────────────────────────────────────────
+  // Load data from Supabase
+  const load = async () => {
+    try {
+      const { data: taskRows, error: taskErr } = await supabase
+        .from("tasks")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (taskErr) throw taskErr;
+      setTasks(taskRows || []);
+
+      const { data: prefRows } = await supabase
+        .from("preferences")
+        .select("value")
+        .eq("key", "top_five")
+        .single();
+      if (prefRows?.value) setTopFive(prefRows.value);
+    } catch (e) {
+      console.error("Load error:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // On mount: load data and watch network
   useEffect(() => {
-    const load = async () => {
-      try {
-        // Load tasks
-        const { data: taskRows, error: taskErr } = await supabase
-          .from("tasks")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (taskErr) throw taskErr;
-        setTasks(taskRows || []);
-
-        // Load top five
-        const { data: prefRows } = await supabase
-          .from("preferences")
-          .select("value")
-          .eq("key", "top_five")
-          .single();
-        if (prefRows?.value) setTopFive(prefRows.value);
-      } catch (e) {
-        console.error("Load error:", e);
-      } finally {
-        setLoading(false);
-      }
-    };
     load();
+    const goOnline = () => {
+      setIsOnline(true);
+      load();
+      navigator.serviceWorker?.ready.then(reg => reg.active?.postMessage("flush"));
+    };
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener("online",  goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => {
+      window.removeEventListener("online",  goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
   }, []);
 
   // ── Sync helpers ─────────────────────────────────────────────────────────────
@@ -785,6 +798,13 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Offline banner */}
+      {!isOnline && (
+        <div style={{ background: "#1a1a1a", color: "#fff", textAlign: "center", padding: "8px 16px", fontSize: 12, letterSpacing: "0.02em" }}>
+          ⚡ You’re offline — changes will sync automatically when you reconnect
+        </div>
+      )}
 
       {/* Loading state */}
       {loading ? (
