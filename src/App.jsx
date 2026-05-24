@@ -464,6 +464,115 @@ const ExcelUpload = ({ onClose, onApply }) => {
   );
 };
 
+// ─── Export Modal ─────────────────────────────────────────────────────────────
+const ExportModal = ({ onClose, tasks, topFive }) => {
+  const [copied, setCopied] = useState(false);
+
+  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+
+  const priorityOrder = ["Critical", "High", "Medium", "Low"];
+  const openDo  = tasks.filter(t => t.type === "do"       && !t.done).sort((a,b) => priorityOrder.indexOf(a.priority) - priorityOrder.indexOf(b.priority));
+  const openDel = tasks.filter(t => t.type === "delegate" && !t.done).sort((a,b) => priorityOrder.indexOf(a.priority) - priorityOrder.indexOf(b.priority));
+  const done    = tasks.filter(t => t.done);
+  const filledTop = topFive.filter(p => p.trim());
+
+  const fmtDeadline = (d) => {
+    if (!d) return "";
+    const dt = new Date(d + "T00:00:00");
+    return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  };
+
+  const buildText = () => {
+    const lines = [];
+    lines.push(`Work Update — ${today}`);
+    lines.push("─".repeat(40));
+
+    if (filledTop.length) {
+      lines.push("");
+      lines.push("TOP PRIORITY PROJECTS & INITIATIVES");
+      filledTop.forEach((p, i) => lines.push(`  ${i+1}. ${p}`));
+    }
+
+    if (openDo.length) {
+      lines.push("");
+      lines.push("WHAT I AM WORKING ON");
+      openDo.forEach(t => {
+        const deadline = t.deadline ? ` — Due ${fmtDeadline(t.deadline)}` : "";
+        lines.push(`  • [${t.priority}] ${t.title}${deadline}`);
+        if (t.notes) lines.push(`    Notes: ${t.notes}`);
+      });
+    }
+
+    if (openDel.length) {
+      lines.push("");
+      lines.push("DELEGATED & WAITING ON");
+      openDel.forEach(t => {
+        const deadline = t.deadline ? ` — Due ${fmtDeadline(t.deadline)}` : "";
+        lines.push(`  • [${t.priority}] ${t.title}${deadline}`);
+        if (t.owner)  lines.push(`    Owner: ${t.owner}`);
+        if (t.action) lines.push(`    Action: ${t.action}`);
+      });
+    }
+
+    if (done.length) {
+      lines.push("");
+      lines.push("RECENTLY COMPLETED");
+      done.forEach(t => lines.push(`  ✓ ${t.title}`));
+    }
+
+    lines.push("");
+    lines.push("─".repeat(40));
+    return lines.join("\n");
+  };
+
+  const text = buildText();
+
+  const copy = () => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    });
+  };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", backdropFilter: "blur(4px)", zIndex: 999, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div style={{ background: "#fff", border: `1px solid ${T.border}`, borderRadius: 14, padding: 28, width: 580, maxWidth: "100%", maxHeight: "88vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, flexShrink: 0 }}>
+          <span style={{ fontWeight: 700, fontSize: 16, color: T.text }}>Email Update</span>
+          <button onClick={onClose} style={{ ...btnOutline, padding: "3px 9px", fontSize: 13 }}>✕</button>
+        </div>
+        <p style={{ fontSize: 12, color: T.textMuted, margin: "0 0 16px 0", flexShrink: 0 }}>
+          Copy the text below and paste it into an email to your manager.
+        </p>
+
+        {/* Text preview */}
+        <textarea
+          readOnly
+          value={text}
+          style={{
+            ...baseInput, flex: 1, minHeight: 320, resize: "none",
+            fontFamily: "monospace", fontSize: 12, lineHeight: 1.7,
+            background: T.surface, color: T.text,
+          }}
+        />
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, marginTop: 14, flexShrink: 0 }}>
+          <button onClick={copy} style={{ ...btnBlack, display: "flex", alignItems: "center", gap: 7 }}>
+            {copied
+              ? <><span>✓</span> Copied!</>
+              : <><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><rect x="4" y="4" width="8" height="8" rx="1.5" stroke="white" strokeWidth="1.2"/><path d="M2.5 9H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v.5" stroke="white" strokeWidth="1.2" strokeLinecap="round"/></svg> Copy to clipboard</>
+            }
+          </button>
+          <button onClick={onClose} style={btnOutline}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Top Five Priorities ──────────────────────────────────────────────────────
 const EMPTY_PRIORITIES = ["", "", "", "", ""];
 
@@ -664,6 +773,9 @@ export default function App() {
             {syncStatus === "error"  && <span style={{ fontSize: 11, color: "#e53e3e" }}>⚠ Sync error</span>}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => setModal("export")} style={{ ...btnOutline, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
+              <span>📧</span> Email Update
+            </button>
             <button onClick={() => setModal("excel")} style={{ ...btnOutline, fontSize: 12, display: "flex", alignItems: "center", gap: 6 }}>
               <span>📊</span> Import Excel
             </button>
@@ -703,8 +815,9 @@ export default function App() {
         </>
       )}
 
-      {modal === "brief" && <BriefPanel onClose={() => setModal(null)} onApply={addTasks} />}
-      {modal === "excel" && <ExcelUpload onClose={() => setModal(null)} onApply={addTasks} />}
+      {modal === "export" && <ExportModal onClose={() => setModal(null)} tasks={tasks} topFive={topFive} />}
+      {modal === "brief"  && <BriefPanel  onClose={() => setModal(null)} onApply={addTasks} />}
+      {modal === "excel"  && <ExcelUpload onClose={() => setModal(null)} onApply={addTasks} />}
     </div>
   );
 }
